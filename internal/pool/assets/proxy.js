@@ -77,7 +77,14 @@ const planName = plan => ({ plus: 'Plus', prolite: 'Pro Lite' })[plan] || plan
 // Nominal capacity estimates, not provider-reported quota amounts. Unknown plans have no estimate.
 const capacityOf = account => account.provider === 'codex' ? ({ plus: 1, prolite: 5 })[account.plan] : 1
 const estimated = list => new Set(list.map(capacityOf)).size > 1
-const capacityHint = list => `Estimated capacity weights: ${[...new Set(list.map(account => `${planName(account.plan)} ${capacityOf(account)}×`))].join(', ')}. Includes exhausted accounts. Actual limits can vary.`
+const capacityHint = list => `Accounts with weekly quota remaining. Estimated capacity weights: ${[...new Set(list.map(account => `${planName(account.plan)} ${capacityOf(account)}×`))].join(', ')}. Actual limits can vary.`
+
+function weeklyAccounts(list) {
+  const enabled = list.filter(account => account.state !== 'disabled')
+  const remaining = enabled.filter(account => !find(account, 'seven_day') || left(find(account, 'seven_day')) > 0)
+  // Keep an exhausted pool at 0%, rather than presenting it as missing data.
+  return remaining.length ? remaining : enabled
+}
 
 // Share of the window still to come. Quota left beyond this mark is ahead of an even pace.
 function paceOf(window) {
@@ -130,7 +137,7 @@ function shares(account) {
 }
 
 function verdict(list) {
-  const usable = list.filter(account => account.state !== 'disabled')
+  const usable = weeklyAccounts(list)
   if (!usable.length) return ['v-bad', 'No enabled accounts']
   if (!usable.some(account => account.state === 'available' || account.state === 'unknown quota')) return ['v-bad', 'Waiting for quota']
   const week = poolWindow(usable, 'seven_day')
@@ -284,24 +291,21 @@ function poolWindow(usable, name) {
 
 function stat(window, label, empty = '–', hint = '') {
   const caption = element('span', 'stat-label muted', `${label}${window?.estimated ? ' · estimated' : ''}`)
-  const node = element('div', 'stat')
+  const node = element('div', 'stat', element('div', 'line',
+    element('b', 'num', window ? `${Math.round(window.left)}%` : empty), caption))
   if (hint) node.title = hint
-  if (!window) {
-    node.className += ' empty'
-    node.append(caption, element('span', 'muted', empty))
-    return node
-  }
+  if (!window) return node
   const fill = element('i', tone(window.left))
   fill.style.width = `${window.left}%`
   const mark = element('b', 'pace')
   mark.style.left = `${window.pace * 100}%`
-  node.append(caption, element('b', 'num', `${Math.round(window.left)}%`), element('div', 'track', fill, mark))
+  node.append(element('div', 'track', fill, mark))
   return node
 }
 
 function providerCard(provider, list, owner) {
-  const usable = list.filter(account => account.state !== 'disabled')
-  const hint = estimated(usable) && usable.every(capacityOf) ? capacityHint(usable) : ''
+  const usable = weeklyAccounts(list)
+  const hint = estimated(usable) && usable.every(capacityOf) ? capacityHint(usable) : 'Accounts with weekly quota remaining.'
   const logo = element('span', 'logo')
   logo.innerHTML = icons[provider]
   const [level, text] = verdict(list)
@@ -339,8 +343,7 @@ function providerCard(provider, list, owner) {
   return card
 }
 
-// Who used how much of a provider's pool this week. Every bar shares one scale, the whole pool,
-// so members compare at a glance.
+// Member contributions share the remaining accounts' weekly quota scale.
 function poolShare(list) {
   if (!list.every(account => capacityOf(account) && find(account, 'seven_day'))) return element('div', 'shares muted', 'Usage shown per account')
   const capacity = (list.reduce((sum, account) => sum + capacityOf(account), 0) || 1) * 100

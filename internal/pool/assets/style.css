@@ -71,13 +71,12 @@ body:has(dialog[open]) { overflow: hidden; }
 .v-warn { color: var(--warn); }
 .v-bad { color: var(--bad); }
 .quota, .shares, .stat { display: grid; grid-template-rows: 22px 6px; gap: 6px; }
-.head .stat { grid-column: 2 / span 2; grid-template-rows: auto 40px 8px; gap: 6px; }
+.head .stat { grid-column: 2 / span 2; grid-template-rows: 40px 8px; gap: 6px; }
 .stat-label { font-size: 12px; font-weight: 500; }
 .stat .num { display: block; font-size: 36px; letter-spacing: -.04em; line-height: 1.1; }
 .head .stat .track { height: 8px; border-radius: 4px; }
 .head .stat .track > i { border-radius: 4px; }
 .head .stat .pace { height: 14px; }
-.stat.empty > :last-child { grid-row: 2 / 4; align-self: center; }
 .head .shares { grid-template-rows: 26px 6px; align-self: end; margin-bottom: 1px; }
 .head .shares .num { font-size: 22px; letter-spacing: -.02em; }
 .no-limit { font-size: 12px; line-height: 22px; }
@@ -97,7 +96,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .switch:checked::after { transform: translateX(12px); }
 .switch:disabled { cursor: wait; opacity: .65; }
 
-.quota .line, .shares .line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; }
+.quota .line, .shares .line, .stat .line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; }
 .shares .track { gap: 0; }
 .num { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .track { position: relative; display: flex; gap: 2px; height: 6px; border-radius: 3px; background: var(--track); }
