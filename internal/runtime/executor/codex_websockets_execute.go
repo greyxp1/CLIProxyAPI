@@ -103,6 +103,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 		return resp, errPromptCache
 	}
 	body = helps.SanitizeCodexInputItemIDs(body)
+	body = helps.StripCodexOutputTokenCounts(body)
 	if useSIWC {
 		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
 	}

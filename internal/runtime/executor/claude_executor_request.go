@@ -1238,6 +1238,9 @@ func applyClaudeHeadersWithNativeProfile(
 				baseBetas = withoutClaudeBeta(baseBetas, claudeExtendedCacheTTLBeta)
 			}
 		}
+		if cfg != nil && cfg.Pool.Enabled && !helps.PoolAllowsFast("claude") {
+			baseBetas = withoutClaudeBeta(baseBetas, claudeFastModeBeta)
+		}
 		// Enforce strict native Claude Code 2.1.280 model & turn beta gating:
 		if !claudeRequestSupportsEffort(body, nil) {
 			baseBetas = withoutClaudeBeta(baseBetas, claudeEffortBeta)

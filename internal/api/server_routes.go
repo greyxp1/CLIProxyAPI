@@ -647,6 +647,9 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
 
 		// Route to Claude handler for Anthropic API requests.
 		if isAnthropicModelsRequest(c) {
+			if cfg != nil && cfg.Pool.Enabled {
+				c.Set(handlers.ModelProviderContextKey, "claude")
+			}
 			claudeHandler.ClaudeModels(c)
 		} else {
 			openaiHandler.OpenAIModels(c)

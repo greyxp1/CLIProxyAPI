@@ -15,6 +15,7 @@ type Config struct {
 	// ServerResponseCompression is the JSON-visible mirror of the downstream
 	// response compression settings (YAML: server.response-compression).
 	ServerResponseCompression ResponseCompressionConfig `yaml:"-" json:"response-compression"`
+	Pool PoolConfig `yaml:"pool" json:"pool"`
 	// Models selects optional catalog sources independently for each catalog.
 	Models ModelCatalogs `yaml:"models" json:"models"`
 

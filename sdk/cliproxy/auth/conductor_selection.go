@@ -630,8 +630,9 @@ func (m *Manager) availableAuthsForRouteModelWithPriorityMode(auths []*Auth, pro
 // or scheduler additionally receives lower priority tiers.
 func (m *Manager) availableAuthsForSelector(selector Selector, auths []*Auth, provider, routeModel string, now time.Time, schedulerAcross bool) (priorityAuths, selectorAuths []*Auth, err error) {
 	_, sessionAffinity := selector.(*SessionAffinitySelector)
+	_, quotaPressure := selector.(*QuotaPressureSelector)
 
-	if !sessionAffinity && !schedulerAcross {
+	if !sessionAffinity && !schedulerAcross && !quotaPressure {
 		priorityAuths, err = m.availableAuthsForRouteModel(auths, provider, routeModel, now)
 		if err != nil {
 			return nil, nil, err
@@ -654,7 +655,7 @@ func (m *Manager) availableAuthsForSelector(selector Selector, auths []*Auth, pr
 		priorityAuths = highestPriorityAuths(allAuths)
 	}
 
-	if sessionAffinity {
+	if sessionAffinity || quotaPressure {
 		selectorAuths = allAuths
 	} else {
 		selectorAuths = highestPriorityAuths(allAuths)
@@ -672,7 +673,9 @@ func selectionArgForSelector(selector Selector, routeModel string) string {
 func selectorContextForAvailableAuths(ctx context.Context, selector Selector, routeModel string) context.Context {
 	ctx = withWeightedSelectorStateModel(ctx, selector, routeModel)
 	if !isBuiltInSelector(selector) {
-		if _, sessionAffinity := selector.(*SessionAffinitySelector); !sessionAffinity {
+		_, sessionAffinity := selector.(*SessionAffinitySelector)
+		_, quotaPressure := selector.(*QuotaPressureSelector)
+		if !sessionAffinity && !quotaPressure {
 			return ctx
 		}
 	}

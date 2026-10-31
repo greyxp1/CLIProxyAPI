@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	"github.com/tidwall/gjson"
@@ -221,7 +224,124 @@ func ApplyPayloadConfigWithTrackedPathsForExecutor(cfg *config.Config, targetExe
 			}
 		}
 	}
+	if cfg.Pool.Enabled {
+		out = applyPoolLimits(model, protocol, root, out)
+	}
 	return out, touched
+}
+
+// EffortLevels are the effort settings the pool owner can switch, lowest first. None turns
+// thinking off rather than setting an effort, so it is always allowed.
+var EffortLevels = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
+
+// PoolOptions holds the effort levels and fast mode the pool owner allows per provider.
+type PoolOptions struct {
+	Efforts map[string]map[string]bool
+	Fast    map[string]bool
+}
+
+// DefaultPoolOptions allows efforts up to high and no fast mode.
+func DefaultPoolOptions() PoolOptions {
+	options := PoolOptions{Efforts: map[string]map[string]bool{}, Fast: map[string]bool{}}
+	for _, provider := range []string{"claude", "codex"} {
+		options.Efforts[provider] = map[string]bool{}
+		for i, level := range EffortLevels {
+			options.Efforts[provider][level] = i <= slices.Index(EffortLevels, "high") && (provider != "claude" || level != "minimal")
+		}
+	}
+	return options
+}
+
+var poolOptions atomic.Pointer[PoolOptions]
+
+func SetPoolOptions(options PoolOptions) { poolOptions.Store(&options) }
+
+func currentPoolOptions() *PoolOptions {
+	if options := poolOptions.Load(); options != nil {
+		return options
+	}
+	options := DefaultPoolOptions()
+	return &options
+}
+
+// PoolAllowsFast reports whether the owner allows fast mode for the provider.
+func PoolAllowsFast(provider string) bool { return currentPoolOptions().Fast[provider] }
+
+// allowedEffort returns the nearest allowed level, preferring lower ones.
+func allowedEffort(level string, allowed map[string]bool, supported []string) string {
+	accepts := func(candidate string) bool {
+		return allowed[candidate] && (len(supported) == 0 || slices.Contains(supported, candidate))
+	}
+	rank := slices.Index(EffortLevels, level)
+	if rank < 0 || accepts(level) {
+		return level
+	}
+	for i := rank - 1; i >= 0; i-- {
+		if accepts(EffortLevels[i]) {
+			return EffortLevels[i]
+		}
+	}
+	for _, candidate := range EffortLevels[rank+1:] {
+		if accepts(candidate) {
+			return candidate
+		}
+	}
+	return level
+}
+
+// Pool limits apply after user payload rules on every upstream request path.
+func applyPoolLimits(model, protocol, root string, body []byte) []byte {
+	set := func(path string, value any) {
+		body, _ = sjson.SetBytes(body, buildPayloadPath(root, path), value)
+	}
+	get := func(path string) gjson.Result { return gjson.GetBytes(body, buildPayloadPath(root, path)) }
+	options := currentPoolOptions()
+	allowed := options.Efforts[protocol]
+	var supported []string
+	var maxBudget int
+	if info := registry.LookupModelInfo(model, protocol); info != nil && info.Thinking != nil {
+		supported = info.Thinking.Levels
+		maxBudget = info.Thinking.Max
+	}
+	capEffort := func(path string) {
+		if effort := get(path).String(); effort != "" {
+			set(path, allowedEffort(effort, allowed, supported))
+		}
+	}
+	switch protocol {
+	case "codex":
+		capEffort("reasoning.effort")
+		for index, item := range get("input").Array() {
+			if item.Get("type").String() == "configuration_update" {
+				capEffort("input." + strconv.Itoa(index) + ".reasoning.effort")
+			}
+		}
+		if !options.Fast[protocol] {
+			set("service_tier", "default")
+		}
+	case "claude":
+		capEffort("output_config.effort")
+		if budget := int(get("thinking.budget_tokens").Int()); budget > 0 {
+			level, _ := thinking.ConvertBudgetToLevel(budget)
+			if capped := allowedEffort(level, allowed, nil); capped != level {
+				value, _ := thinking.ConvertLevelToBudget(capped)
+				if maxBudget > 0 {
+					value = min(value, maxBudget)
+				}
+				if output := int(get("max_tokens").Int()); output > 0 && value >= output {
+					// Thinking may be off when no allowed budget fits the output limit.
+					set("thinking.type", "disabled")
+					body, _ = sjson.DeleteBytes(body, buildPayloadPath(root, "thinking.budget_tokens"))
+				} else {
+					set("thinking.budget_tokens", value)
+				}
+			}
+		}
+		if !options.Fast[protocol] {
+			body, _ = sjson.DeleteBytes(body, buildPayloadPath(root, "speed"))
+		}
+	}
+	return body
 }
 
 // ApplyPayloadConfigWithRequestTracked applies payload config and reports whether

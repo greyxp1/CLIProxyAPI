@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLI Proxy</title>
+<link rel="icon" type="image/svg+xml" href="/proxy/stats.svg">
+<link rel="stylesheet" href="/proxy/style.css">
+<main class="layout">
+  <div id="providers"></div>
+  <aside class="panel">
+    <header class="top">
+      <div>
+        <h1>Members</h1>
+        <p class="muted caption" id="updated"></p>
+      </div>
+      <div class="actions">
+        <button id="add-member" class="icon-button" type="button" hidden></button>
+        <button id="refresh" class="icon-button" type="button" aria-label="Refresh limits"></button>
+        <button id="admin" class="icon-button" type="button" aria-label="Admin"></button>
+      </div>
+    </header>
+    <form id="login" class="inline" hidden>
+      <input id="key" type="password" autocomplete="current-password" placeholder="Management key" aria-label="Management key">
+      <button class="primary">Sign in</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <section class="section">
+      <div id="members"></div>
+      <form id="add" class="inline" hidden>
+        <input id="name" maxlength="80" required autocomplete="off" placeholder="Member name" aria-label="Member name">
+        <button id="confirm-add" class="icon-button"></button>
+        <button id="cancel-add" class="icon-button" type="button"></button>
+      </form>
+    </section>
+  </aside>
+</main>
+<dialog id="created" aria-labelledby="prompt-title">
+  <h3 id="prompt-title"></h3>
+  <div class="prompt-box">
+    <textarea id="prompt" aria-label="Setup prompt" readonly></textarea>
+    <button id="copy" class="icon-button" type="button"></button>
+  </div>
+</dialog>
+<dialog id="ask" aria-labelledby="ask-title">
+  <h3 id="ask-title"></h3>
+  <p id="ask-text" class="muted"></p>
+  <div class="ask-actions">
+    <button id="ask-cancel" type="button">Cancel</button>
+    <button id="ask-ok" type="button"></button>
+  </div>
+</dialog>
+<script src="/proxy/app.js"></script>
+</html>

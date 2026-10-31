@@ -55,6 +55,7 @@ type configCommit struct {
 }
 
 type routingRuntimeState struct {
+	quotas                   *coreauth.QuotaStore
 	strategy                 string
 	sessionAffinity          bool
 	sessionAffinityTTL       time.Duration
@@ -74,6 +75,8 @@ func normalizedRoutingRuntimeState(cfg *config.Config) routingRuntimeState {
 	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Routing.Strategy)) {
+	case "quota-pressure":
+		state.strategy = "quota-pressure"
 	case "weighted-round-robin", "weightedroundrobin", "wrr":
 		state.strategy = "weighted-round-robin"
 	case "fill-first", "fillfirst", "ff":
@@ -100,6 +103,8 @@ func normalizedRoutingRuntimeState(cfg *config.Config) routingRuntimeState {
 func newRoutingSelector(state routingRuntimeState) coreauth.Selector {
 	var selector coreauth.Selector
 	switch state.strategy {
+	case "quota-pressure":
+		selector = &coreauth.QuotaPressureSelector{Quotas: state.quotas, Fallback: &coreauth.RoundRobinSelector{}}
 	case "weighted-round-robin":
 		selector = &coreauth.WeightedRoundRobinSelector{}
 	case "fill-first":
@@ -257,6 +262,9 @@ func (s *Service) applyManagerConfig(ctx context.Context, commit configCommit) b
 		return false
 	}
 	routingState := normalizedRoutingRuntimeState(commit.cfg)
+	if s.pool != nil {
+		routingState.quotas = s.pool.Quotas()
+	}
 	if s.appliedRoutingState == nil || *s.appliedRoutingState != routingState {
 		s.coreManager.SetSelector(newRoutingSelector(routingState))
 		s.appliedRoutingState = &routingState

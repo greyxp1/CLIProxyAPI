@@ -216,6 +216,8 @@ type ModelRegistry struct {
 	registrationEpoch atomic.Uint64
 	// hook is an optional callback sink for model registration changes
 	hook ModelRegistryHook
+	// blocked holds model IDs switched off for every client. They route nowhere and are not listed.
+	blocked map[string]bool
 }
 
 // Global model registry instance
@@ -1550,7 +1552,7 @@ func (r *ModelRegistry) GetAvailableModelInfos() []*ModelInfo {
 	result := make([]*ModelInfo, 0, len(r.models))
 	for _, registration := range r.models {
 		available, _ := modelRegistrationAvailability(registration, now)
-		if !available || registration == nil || registration.Info == nil {
+		if !available || registration == nil || registration.Info == nil || r.blockedLocked(registration) {
 			continue
 		}
 		result = append(result, cloneModelInfo(registration.Info))
@@ -1570,7 +1572,7 @@ func (r *ModelRegistry) buildAvailableModelsLocked(handlerType string, now time.
 		if !registrationExpiresAt.IsZero() && (expiresAt.IsZero() || registrationExpiresAt.Before(expiresAt)) {
 			expiresAt = registrationExpiresAt
 		}
-		if !available || registration == nil {
+		if !available || registration == nil || r.blockedLocked(registration) {
 			continue
 		}
 
@@ -1784,6 +1786,21 @@ func (r *ModelRegistry) GetModelCount(modelID string) int {
 	return 0
 }
 
+// SetBlockedModels switches the given model IDs off for every client, replacing the previous set.
+func (r *ModelRegistry) SetBlockedModels(ids []string) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.blocked = make(map[string]bool, len(ids))
+	for _, id := range ids {
+		r.blocked[id] = true
+	}
+	r.invalidateAvailableModelsCacheLocked()
+}
+
+func (r *ModelRegistry) blockedLocked(registration *ModelRegistration) bool {
+	return registration != nil && registration.Info != nil && r.blocked[registration.Info.ID]
+}
+
 // GetModelProviders returns provider identifiers that currently supply the given model
 // Parameters:
 //   - modelID: The model ID to check
@@ -1793,6 +1810,10 @@ func (r *ModelRegistry) GetModelCount(modelID string) int {
 func (r *ModelRegistry) GetModelProviders(modelID string) []string {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
+	if r.blocked[modelID] {
+		return nil
+	}
 
 	registration, exists := r.models[modelID]
 	if !exists || registration == nil || len(registration.Providers) == 0 {

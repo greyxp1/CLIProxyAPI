@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -159,7 +160,15 @@ func rewriteClaudeDDModelInBody(rawJSON []byte) []byte {
 func (h *ClaudeCodeAPIHandler) ClaudeModels(c *gin.Context) {
 	cfg := h.CurrentConfig()
 	disableCloaking := cfg != nil && cfg.ClaudeCode.DisableCloakingModelList
-	h.WriteModelListResponse(c, h.HandlerType(), claudemodels.BuildResponse(h.Models(), disableCloaking))
+	models := h.Models()
+	if provider := c.GetString(handlers.ModelProviderContextKey); provider != "" {
+		modelRegistry := registry.GetGlobalRegistry()
+		models = slices.DeleteFunc(models, func(model map[string]any) bool {
+			id, _ := model["id"].(string)
+			return !slices.Contains(modelRegistry.GetModelProviders(id), provider)
+		})
+	}
+	h.WriteModelListResponse(c, h.HandlerType(), claudemodels.BuildResponse(models, disableCloaking))
 }
 
 // handleNonStreamingResponse handles non-streaming content generation requests for Claude models.

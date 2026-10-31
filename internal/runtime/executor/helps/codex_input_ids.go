@@ -26,6 +26,20 @@ const (
 	codexInputItemIDDuplicate uint8 = 1 << 3
 )
 
+// Codex returns token counts in output metadata but rejects them in request input.
+// Other passthrough metadata, including turn IDs, remains valid on replay.
+func StripCodexOutputTokenCounts(body []byte) []byte {
+	for index, item := range gjson.GetBytes(body, "input").Array() {
+		const field = "internal_chat_message_metadata_passthrough.content_token_count"
+		if item.Get(field).Exists() {
+			if updated, err := sjson.DeleteBytes(body, "input."+strconv.Itoa(index)+"."+field); err == nil {
+				body = updated
+			}
+		}
+	}
+	return body
+}
+
 // SanitizeCodexInputItemIDs normalizes supported input item IDs for Codex, removes encrypted
 // reasoning items whose IDs exceed the Codex limit, and deterministically shortens
 // other overlong input item IDs.
