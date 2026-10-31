@@ -283,7 +283,7 @@ function poolWindow(usable, name) {
 }
 
 function stat(window, label, empty = '–', hint = '') {
-  const caption = element('span', 'stat-label muted', label)
+  const caption = element('span', 'stat-label muted', `${label}${window?.estimated ? ' · estimated' : ''}`)
   const node = element('div', 'stat')
   if (hint) node.title = hint
   if (!window) {
@@ -295,16 +295,19 @@ function stat(window, label, empty = '–', hint = '') {
   fill.style.width = `${window.left}%`
   const mark = element('b', 'pace')
   mark.style.left = `${window.pace * 100}%`
-  node.append(caption, element('b', 'num', `${window.estimated ? '≈' : ''}${Math.round(window.left)}%`), element('div', 'track', fill, mark))
+  node.append(caption, element('b', 'num', `${Math.round(window.left)}%`), element('div', 'track', fill, mark))
   return node
 }
 
 function providerCard(provider, list, owner) {
   const usable = list.filter(account => account.state !== 'disabled')
   const hint = estimated(usable) && usable.every(capacityOf) ? capacityHint(usable) : ''
-  const uncapped = usable.some(account => account.provider === 'codex' && account.state === 'available' && find(account, 'seven_day') && left(find(account, 'seven_day')) > 0 && !find(account, 'five_hour'))
   const limited = usable.filter(account => !(account.provider === 'codex' && find(account, 'seven_day') && !find(account, 'five_hour')))
-  const session = uncapped ? null : poolWindow(limited, 'five_hour')
+  const session = poolWindow(limited, 'five_hour')
+  const plans = [...new Set(limited.map(account => account.plan))]
+  const sessionLabel = limited.length < usable.length
+    ? `${plans.length === 1 && plans[0] ? planName(plans[0]) : 'Capped accounts'} · 5 hours left`
+    : 'Session left'
   const logo = element('span', 'logo')
   logo.innerHTML = icons[provider]
   const [level, text] = verdict(list)
@@ -332,7 +335,7 @@ function providerCard(provider, list, owner) {
   const head = element('div', 'head',
     element('div', 'identity', logo, element('div', 'title', heading, element('p', `verdict ${level}`, text))),
     stat(poolWindow(usable, 'seven_day'), 'Weekly left', '–', hint),
-    stat(session, 'Session left', uncapped ? 'No session limit' : '–', uncapped ? 'An available Pro account has no five-hour cap. Weekly limits still apply.' : session?.estimated ? capacityHint(limited) : ''),
+    stat(session, sessionLabel, usable.length && !limited.length ? 'No five-hour cap' : '–', session?.estimated ? capacityHint(limited) : ''),
     poolShare(usable))
   const controls = element('div', 'chips', ...limitChips(provider, view.data.options?.[provider], owner))
   const card = element('section', 'card', head,
@@ -366,10 +369,10 @@ function poolShare(list) {
     const part = element('i')
     part.style.width = `${value / capacity * 100}%`
     part.style.background = colorOf(name)
-    part.title = `${name}: ${estimated(list) ? '≈' : ''}${Math.round(value / capacity * 100)}%`
+    part.title = `${name}: ${Math.round(value / capacity * 100)}%${estimated(list) ? ' estimated' : ''}`
     stack.append(part)
   }
-  const node = element('div', 'shares pool', element('div', 'line', element('b', 'num', `${estimated(list) ? '≈' : ''}${Math.round(used / capacity * 100)}%`), element('span', 'muted small', 'used')), stack)
+  const node = element('div', 'shares pool', element('div', 'line', element('b', 'num', `${Math.round(used / capacity * 100)}%`), element('span', 'muted small', estimated(list) ? 'used · estimated' : 'used')), stack)
   if (estimated(list)) node.title = capacityHint(list)
   return node
 }
