@@ -77,7 +77,7 @@ const planName = plan => ({ plus: 'Plus', prolite: 'Pro Lite' })[plan] || plan
 // Nominal capacity estimates, not provider-reported quota amounts. Unknown plans have no estimate.
 const capacityOf = account => account.provider === 'codex' ? ({ plus: 1, prolite: 5 })[account.plan] : 1
 const estimated = list => new Set(list.map(capacityOf)).size > 1
-const capacityHint = list => `Estimated capacity weights: ${[...new Set(list.map(account => `${planName(account.plan)} ${capacityOf(account)}×`))].join(', ')}. Actual limits can vary.`
+const capacityHint = list => `Estimated capacity weights: ${[...new Set(list.map(account => `${planName(account.plan)} ${capacityOf(account)}×`))].join(', ')}. Includes exhausted accounts. Actual limits can vary.`
 
 // Share of the window still to come. Quota left beyond this mark is ahead of an even pace.
 function paceOf(window) {
@@ -302,12 +302,6 @@ function stat(window, label, empty = '–', hint = '') {
 function providerCard(provider, list, owner) {
   const usable = list.filter(account => account.state !== 'disabled')
   const hint = estimated(usable) && usable.every(capacityOf) ? capacityHint(usable) : ''
-  const limited = usable.filter(account => !(account.provider === 'codex' && find(account, 'seven_day') && !find(account, 'five_hour')))
-  const session = poolWindow(limited, 'five_hour')
-  const plans = [...new Set(limited.map(account => account.plan))]
-  const sessionLabel = limited.length < usable.length
-    ? `${plans.length === 1 && plans[0] ? planName(plans[0]) : 'Capped accounts'} · 5 hours left`
-    : 'Session left'
   const logo = element('span', 'logo')
   logo.innerHTML = icons[provider]
   const [level, text] = verdict(list)
@@ -334,8 +328,7 @@ function providerCard(provider, list, owner) {
   }
   const head = element('div', 'head',
     element('div', 'identity', logo, element('div', 'title', heading, element('p', `verdict ${level}`, text))),
-    stat(poolWindow(usable, 'seven_day'), 'Weekly left', '–', hint),
-    stat(session, sessionLabel, usable.length && !limited.length ? 'No five-hour cap' : '–', session?.estimated ? capacityHint(limited) : ''),
+    stat(poolWindow(usable, 'seven_day'), 'Weekly pool left', '–', hint),
     poolShare(usable))
   const controls = element('div', 'chips', ...limitChips(provider, view.data.options?.[provider], owner))
   const card = element('section', 'card', head,

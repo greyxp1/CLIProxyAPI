@@ -71,7 +71,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .v-warn { color: var(--warn); }
 .v-bad { color: var(--bad); }
 .quota, .shares, .stat { display: grid; grid-template-rows: 22px 6px; gap: 6px; }
-.head .stat { grid-template-rows: auto 40px 8px; gap: 6px; }
+.head .stat { grid-column: 2 / span 2; grid-template-rows: auto 40px 8px; gap: 6px; }
 .stat-label { font-size: 12px; font-weight: 500; }
 .stat .num { display: block; font-size: 36px; letter-spacing: -.04em; line-height: 1.1; }
 .head .stat .track { height: 8px; border-radius: 4px; }
@@ -155,6 +155,7 @@ button[data-tip] { cursor: pointer; }
   .head, .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 16px; }
   .row.labels > :not(:first-child) { display: none; }
   .head > :first-child, .row > :first-child, .shares { grid-column: 1 / -1; }
+  .head .stat { grid-column: 1 / -1; }
   .row > .quota:nth-child(2)::before { content: "Weekly left"; }
   .row > .quota:nth-child(3)::before { content: "Session left"; }
   .row > .quota::before, .shares::before { display: block; margin-bottom: 6px; color: var(--muted); font-size: 12px; grid-column: 1; }
