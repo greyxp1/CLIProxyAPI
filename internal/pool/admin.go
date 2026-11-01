@@ -94,7 +94,7 @@ func (p *Pool) statusData(role string) (any, error) {
 		id := Fingerprint(client.Inference)
 		names[id], active[id] = name, true
 	}
-	today := time.Now().UTC().Format("2006-01-02")
+	today := usageDay(time.Now())
 	members := make(map[string]*adminMember)
 	member := func(client string) *adminMember {
 		if members[client] == nil {

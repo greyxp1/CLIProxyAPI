@@ -64,12 +64,20 @@ func (p *Pool) HandleUsage(_ context.Context, record coreusage.Record) {
 	}
 }
 
+// Usage days begin at 08:00 in the server's timezone, including across DST changes.
+func usageDay(stamp time.Time) string {
+	local := stamp.In(time.Local)
+	if local.Hour() < 8 {
+		local = local.AddDate(0, 0, -1)
+	}
+	return local.Format("2006-01-02")
+}
+
 func (p *Pool) recordUsage(record coreusage.Record) error {
 	stamp := record.RequestedAt
 	if stamp.IsZero() {
 		stamp = time.Now()
 	}
-	day := stamp.UTC().Format("2006-01-02")
 	model := record.Model
 	if model == "" {
 		model = "unknown"
@@ -96,13 +104,13 @@ func (p *Pool) recordUsage(record coreusage.Record) error {
 	}
 	detail := coreusage.EnsureTokenBreakdownForProvider(record.Detail, record.Provider, record.ExecutorType)
 	_, err = tx.Exec(`INSERT INTO usage VALUES (?,?,?,1,?,?,?,?,?) ON CONFLICT(day,client,model) DO UPDATE SET requests=requests+1, failures=failures+excluded.failures, input=input+excluded.input, output=output+excluded.output, cached=cached+excluded.cached, total=total+excluded.total`,
-		day, clientID, model, failed, detail.InputTokens, detail.OutputTokens, detail.CachedTokens, detail.TotalTokens)
+		usageDay(stamp), clientID, model, failed, detail.InputTokens, detail.OutputTokens, detail.CachedTokens, detail.TotalTokens)
 	if err != nil {
 		return err
 	}
 	if record.AuthID != "" {
 		_, err = tx.Exec(`INSERT INTO account_usage VALUES (?,?,?,1,?,?) ON CONFLICT(day,account,client) DO UPDATE SET requests=requests+1, total=total+excluded.total, last_used=MAX(last_used,excluded.last_used)`,
-			day, record.AuthID, clientID, detail.TotalTokens, stamp.Unix())
+			stamp.UTC().Format("2006-01-02"), record.AuthID, clientID, detail.TotalTokens, stamp.Unix())
 		if err != nil {
 			return err
 		}
