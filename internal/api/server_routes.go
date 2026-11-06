@@ -630,6 +630,10 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
 		}
 
 		cfg := s.getConfig()
+		// Pool members' Codex setups ask for their provider's models only.
+		if provider := c.Query("provider"); cfg != nil && cfg.Pool.Enabled && provider != "" {
+			c.Set(handlers.ModelProviderContextKey, provider)
+		}
 		if _, ok := c.Request.URL.Query()["client_version"]; ok {
 			clientVersion := c.Query("client_version")
 			if cfg != nil && cfg.Home.Enabled {
@@ -647,6 +651,9 @@ func (s *Server) unifiedModelsHandler(openaiHandler *openai.OpenAIAPIHandler, cl
 
 		// Route to Claude handler for Anthropic API requests.
 		if isAnthropicModelsRequest(c) {
+			if cfg != nil && cfg.Pool.Enabled {
+				c.Set(handlers.ModelProviderContextKey, "claude")
+			}
 			claudeHandler.ClaudeModels(c)
 		} else {
 			openaiHandler.OpenAIModels(c)
