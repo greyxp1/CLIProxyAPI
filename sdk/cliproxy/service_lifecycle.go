@@ -9,6 +9,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/pool"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
@@ -136,7 +137,26 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 
 	// handlers no longer depend on legacy clients; pass nil slice initially
+	if cfg.Pool.Enabled {
+		if homeEnabled {
+			return fmt.Errorf("subscription pool cannot run in Home mode")
+		}
+		var errPool error
+		s.pool, errPool = pool.New(cfg, s.coreManager)
+		if errPool != nil {
+			return fmt.Errorf("initialize subscription pool: %w", errPool)
+		}
+		sdkaccess.RegisterProvider("pool", s.pool.Registry())
+		s.accessManager.SetProviders(sdkaccess.RegisteredProviders())
+		routingState := normalizedRoutingRuntimeState(cfg)
+		routingState.quotas = s.pool.Quotas()
+		s.coreManager.SetSelector(newRoutingSelector(routingState))
+		s.appliedRoutingState = &routingState
+	}
 	s.server = api.NewServer(cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
+	if s.pool != nil {
+		s.pool.SetOAuthHandler(s.server.ManagementHandler())
+	}
 	s.syncPluginRuntimeConfig(ctx)
 	if homeEnabled {
 		s.configRuntimeMu.Lock()
@@ -198,6 +218,11 @@ func (s *Service) Run(ctx context.Context) error {
 
 	if s.hooks.OnAfterStart != nil {
 		s.hooks.OnAfterStart(s)
+	}
+	if s.pool != nil {
+		if errStart := s.pool.Start(ctx); errStart != nil {
+			return fmt.Errorf("start subscription pool: %w", errStart)
+		}
 	}
 
 	if !homeEnabled {
@@ -401,6 +426,12 @@ func (s *Service) Shutdown(ctx context.Context) error {
 
 		helps.RetireProxyPoolPublisher(s.proxyPoolPublisher)
 		usage.StopDefault()
+		if s.pool != nil {
+			if errPool := s.pool.Shutdown(ctx); errPool != nil && shutdownErr == nil {
+				shutdownErr = errPool
+			}
+			sdkaccess.UnregisterProvider("pool")
+		}
 	})
 	return shutdownErr
 }

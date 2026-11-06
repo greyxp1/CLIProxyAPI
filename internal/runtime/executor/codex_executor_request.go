@@ -187,6 +187,7 @@ func (e *CodexExecutor) cacheHelperDoc(ctx context.Context, from sdktranslator.F
 		helps.SetStringIfDifferentDoc(doc, "prompt_cache_key", cache.ID)
 	}
 	helps.SanitizeCodexInputItemIDsDoc(doc)
+	helps.StripCodexOutputTokenCountsDoc(doc)
 	helps.FinalizePayloadDoc(ctx, doc)
 	var rawJSON []byte
 	if doc != nil {

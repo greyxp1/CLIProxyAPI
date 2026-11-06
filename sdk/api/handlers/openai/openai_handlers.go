@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -63,9 +64,17 @@ func (h *OpenAIAPIHandler) Models() []map[string]any {
 // It returns a list of available AI models with their capabilities
 // and specifications in OpenAI-compatible format.
 func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
+	allModels := h.Models()
+	if provider := c.GetString(handlers.ModelProviderContextKey); provider != "" {
+		modelRegistry := registry.GetGlobalRegistry()
+		allModels = slices.DeleteFunc(allModels, func(model map[string]any) bool {
+			id, _ := model["id"].(string)
+			return !slices.Contains(modelRegistry.GetModelProviders(id), provider)
+		})
+	}
 	if _, ok := c.Request.URL.Query()["client_version"]; ok {
 		clientVersion := c.Query("client_version")
-		body, errMarshal := codexmodels.MarshalCompact(h.codexClientModelsResponse(clientVersion))
+		body, errMarshal := codexmodels.MarshalCompact(h.codexClientModelsResponse(allModels, clientVersion))
 		if errMarshal != nil {
 			c.JSON(http.StatusInternalServerError, handlers.ErrorResponse{
 				Error: handlers.ErrorDetail{
@@ -78,9 +87,6 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 		h.WriteModelListResponse(c, h.HandlerType(), body)
 		return
 	}
-
-	// Get all available models
-	allModels := h.Models()
 
 	// Filter to only include the 4 required fields: id, object, created, owned_by
 	filteredModels := make([]map[string]any, len(allModels))

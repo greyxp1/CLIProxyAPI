@@ -1,14 +1,18 @@
 package helps
 
 import (
+	"cmp"
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -334,7 +338,162 @@ func applyPayloadConfigWithTrackedPathsForExecutorDoc(cfg *config.Config, target
 			}
 		}
 	}
+	if cfg.Pool.Enabled && applyPoolLimitsDoc(model, protocol, root, doc) {
+		mutated = true
+	}
 	return touched, mutated
+}
+
+// EffortLevels are the effort settings the pool owner can switch, lowest first. None turns
+// thinking off rather than setting an effort, so it is always allowed.
+var EffortLevels = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
+
+// PoolOptions holds the effort levels and fast mode the pool owner allows per provider.
+type PoolOptions struct {
+	Efforts map[string]map[string]bool
+	Fast    map[string]bool
+}
+
+// DefaultPoolOptions allows efforts up to high and no fast mode.
+func DefaultPoolOptions() PoolOptions {
+	options := PoolOptions{Efforts: map[string]map[string]bool{}, Fast: map[string]bool{}}
+	for _, provider := range []string{"claude", "codex"} {
+		options.Efforts[provider] = map[string]bool{}
+		for i, level := range EffortLevels {
+			options.Efforts[provider][level] = i <= slices.Index(EffortLevels, "high") && (provider != "claude" || level != "minimal")
+		}
+	}
+	return options
+}
+
+var poolOptions atomic.Pointer[PoolOptions]
+
+func SetPoolOptions(options PoolOptions) { poolOptions.Store(&options) }
+
+func currentPoolOptions() *PoolOptions {
+	if options := poolOptions.Load(); options != nil {
+		return options
+	}
+	options := DefaultPoolOptions()
+	return &options
+}
+
+// PoolAllowsFast reports whether the owner allows fast mode for the provider.
+func PoolAllowsFast(provider string) bool { return currentPoolOptions().Fast[provider] }
+
+// allowedEffort returns the nearest allowed level, preferring lower ones.
+func allowedEffort(level string, allowed map[string]bool, supported []string) string {
+	accepts := func(candidate string) bool {
+		return allowed[candidate] && (len(supported) == 0 || slices.Contains(supported, candidate))
+	}
+	normalized := strings.ToLower(strings.TrimSpace(level))
+	// None turns thinking off, so it is always allowed.
+	if normalized == "none" {
+		return level
+	}
+	if accepts(normalized) {
+		return normalized
+	}
+	// An unknown level is treated as above every known one, so it is capped rather than passed through.
+	rank := slices.Index(EffortLevels, normalized)
+	if rank < 0 {
+		rank = len(EffortLevels)
+	}
+	for i := rank - 1; i >= 0; i-- {
+		if accepts(EffortLevels[i]) {
+			return EffortLevels[i]
+		}
+	}
+	for _, candidate := range EffortLevels[min(rank+1, len(EffortLevels)):] {
+		if accepts(candidate) {
+			return candidate
+		}
+	}
+	// With every level disabled, the lowest level the model supports spends the least.
+	if len(supported) > 0 {
+		return supported[0]
+	}
+	return EffortLevels[0]
+}
+
+// Pool limits apply after user payload rules on every upstream request path. They report whether they changed doc.
+func applyPoolLimitsDoc(model, protocol, root string, doc *ojson.Doc) bool {
+	changed := false
+	set := func(path string, value any) {
+		if doc.Set(buildPayloadPath(root, path), value) == nil {
+			changed = true
+		}
+	}
+	remove := func(path string) {
+		full := buildPayloadPath(root, path)
+		if doc.Get(full).Exists() && doc.Delete(full) == nil {
+			changed = true
+		}
+	}
+	get := func(path string) ojson.Result { return doc.Get(buildPayloadPath(root, path)) }
+	options := currentPoolOptions()
+	allowed := options.Efforts[protocol]
+	var supported []string
+	var maxBudget int
+	disableType := ""
+	if info := registry.LookupModelInfo(model, protocol); info != nil && info.Thinking != nil {
+		supported = info.Thinking.Levels
+		maxBudget = info.Thinking.Max
+		disableType = info.Thinking.DisableType
+	}
+	// A missing effort runs at the provider's default, so models with effort levels cap that default too.
+	capEffort := func(path, fallback string) {
+		effort := get(path).String()
+		if effort == "" && len(supported) > 0 {
+			effort = fallback
+		}
+		if effort == "" {
+			return
+		}
+		if capped := allowedEffort(effort, allowed, supported); capped != effort {
+			set(path, capped)
+		}
+	}
+	switch protocol {
+	case "codex":
+		capEffort("reasoning.effort", "medium")
+		for index, item := range get("input").Array() {
+			if item.Get("type").String() == "configuration_update" {
+				// A configuration update without an effort keeps the session's current one.
+				capEffort("input."+strconv.Itoa(index)+".reasoning.effort", "")
+			}
+		}
+		// Fast mode is the priority tier. Other tiers, or none, pass through unchanged.
+		if tier := get("service_tier").String(); !options.Fast[protocol] && (tier == "priority" || tier == "fast") {
+			remove("service_tier")
+		}
+	case "claude":
+		capEffort("output_config.effort", "high")
+		if budget := int(get("thinking.budget_tokens").Int()); budget > 0 {
+			level, _ := thinking.ConvertBudgetToLevel(budget)
+			// Budgets above the xhigh budget can only come from the max level.
+			if xhigh, _ := thinking.ConvertLevelToBudget("xhigh"); budget > xhigh {
+				level = "max"
+			}
+			if capped := allowedEffort(level, allowed, nil); capped != level {
+				value, _ := thinking.ConvertLevelToBudget(capped)
+				if maxBudget > 0 {
+					value = min(value, maxBudget)
+				}
+				if output := int(get("max_tokens").Int()); output > 0 && value >= output {
+					// Thinking may be off when no allowed budget fits the output limit.
+					set("thinking.type", cmp.Or(disableType, "disabled"))
+					remove("thinking.budget_tokens")
+				} else {
+					set("thinking.budget_tokens", value)
+				}
+			}
+		}
+		if !options.Fast[protocol] {
+			remove("speed")
+		}
+	}
+	return changed
 }
 
 // ApplyPayloadConfigWithRequestTracked applies payload config and reports whether
