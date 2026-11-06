@@ -995,6 +995,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 	if hadUnconfiguredInstructions {
 		unconfiguredInstructions = strings.Clone(doc.Get("instructions").Raw)
 	}
+	helps.StripCodexOutputTokenCountsDoc(doc)
 	if useSIWC {
 		applyCodexSIWCWebsocketBodyRulesDoc(doc, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
 	}

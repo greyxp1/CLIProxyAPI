@@ -740,6 +740,8 @@ func modelListInterceptorMetadata(c *gin.Context) map[string]any {
 	return meta
 }
 
+const ModelProviderContextKey = "cliproxy.model_provider"
+
 // WriteModelListResponse serializes the model-list payload, applies plugin response interceptors
 // if a plugin host is configured, and writes the resulting headers and body to the Gin context.
 func (h *BaseAPIHandler) WriteModelListResponse(c *gin.Context, sourceFormat string, payload any) {
