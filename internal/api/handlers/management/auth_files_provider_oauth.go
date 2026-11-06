@@ -99,6 +99,7 @@ func bindOAuthSessionTarget(c *gin.Context, state string, respPayload gin.H) (oa
 func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 	ctx := context.Background()
 	ctx = PopulateAuthContext(ctx, c)
+	trackOutcome := oauthSessionProviderFromContext(c) != ""
 
 	fmt.Println("Initializing Claude authentication...")
 
@@ -240,7 +241,7 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 			Storage:  tokenStorage,
 			Metadata: metadata,
 		}
-		savedPath, okSaved := h.commitAndCompleteBuiltinOAuthSession(ctx, state, "anthropic", sessionProxyURL, record, "Failed to save authentication tokens", false)
+		savedPath, okSaved := h.commitAndCompleteBuiltinOAuthSession(ctx, state, "anthropic", sessionProxyURL, record, "Failed to save authentication tokens", trackOutcome)
 		if !okSaved {
 			return
 		}
@@ -730,6 +731,7 @@ func authGrantFingerprint(auth *coreauth.Auth) string {
 func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 	ctx := context.Background()
 	ctx = PopulateAuthContext(ctx, c)
+	trackOutcome := oauthSessionProviderFromContext(c) != ""
 
 	fmt.Println("Initializing Antigravity authentication...")
 
@@ -882,7 +884,7 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			Label:    label,
 			Metadata: metadata,
 		}
-		savedPath, okSaved := h.commitAndCompleteBuiltinOAuthSession(ctx, state, "antigravity", sessionProxyURL, record, "Failed to save token to file", false)
+		savedPath, okSaved := h.commitAndCompleteBuiltinOAuthSession(ctx, state, "antigravity", sessionProxyURL, record, "Failed to save token to file", trackOutcome)
 		if !okSaved {
 			return
 		}

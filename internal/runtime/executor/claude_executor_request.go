@@ -1399,6 +1399,9 @@ func applyClaudeHeadersWithNativeProfile(
 				baseBetas = withoutClaudeBeta(baseBetas, claudeExtendedCacheTTLBeta)
 			}
 		}
+		if cfg != nil && cfg.Pool.Enabled && !helps.PoolAllowsFast("claude") {
+			baseBetas = withoutClaudeBeta(baseBetas, claudeFastModeBeta)
+		}
 		reqProbeOrHelper := helps.IsClaudeProbeOrHelperRequest(body)
 		if !preserveThreadCapabilities {
 			// Per-turn gating remains unchanged outside caller-declared Threads.
